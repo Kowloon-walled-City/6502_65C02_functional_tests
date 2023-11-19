@@ -1,0 +1,187 @@
+;
+; 6 5 0 2   F U N C T I O N A L   T E S T
+;
+; Copyright (C) 2012-2020  Klaus Dormann
+;
+; This program is free software: you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation, either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+; This program is designed to test all opcodes of a 6502 emulator using all
+; addressing modes with focus on propper setting of the processor status
+; register bits.
+; 
+; version 05-jan-2020
+; contact info at http://2m5.de or email K@2m5.de
+;
+; assembled with CA65, linked with LD65 (cc65.github.io):
+;  ca65 -l 6502_functional_test.lst 6502_functional_test.ca65
+;  ld65 6502_functional_test.o -o 6502_functional_test.bin \
+;   -m 6502_functional_test.map -C example.cfg
+; example linker config (example.cfg):
+;  MEMORY {
+;  RAM: start = $0000, size=$8000, type = rw, fill = yes, \
+;   fillval = $FF, file = %O;
+;  ROM: start = $8000, size=$7FFA, type = ro, fill = yes, \
+;   fillval = $FF, file = %O;
+;  ROM_VECTORS: start = $FFFA, size=6, type = ro, fill = yes, \
+;   fillval = $FF, file = %O;
+;  }
+;  SEGMENTS {
+;  ZEROPAGE: load=RAM, type=rw;
+;  DATA: load=RAM, type=rw, offset=$0200;
+;  CODE: load=RAM, type=rw, offset=$0400;
+;  VECTORS: load=ROM_VECTORS, type=ro;
+;  }
+;
+; No IO - should be run from a monitor with access to registers.
+; To run load intel hex image with a load command, than alter PC to 400 hex
+; (code_segment) and enter a go command.
+; Loop on program counter determines error or successful completion of test.
+; Check listing for relevant traps (jump/branch *).
+; Please note that in early tests some instructions will have to be used before
+; they are actually tested!
+;
+; RESET, NMI or IRQ should not occur and will be trapped if vectors are enabled.
+; Tests documented behavior of the original NMOS 6502 only! No unofficial
+; opcodes. Additional opcodes of newer versions of the CPU (65C02, 65816) will
+; not be tested. Decimal ops will only be tested with valid BCD operands and
+; N V Z flags will be ignored.
+;
+; Debugging hints:
+;     Most of the code is written sequentially. if you hit a trap, check the
+;   immediately preceeding code for the instruction to be tested. Results are
+;   tested first, flags are checked second by pushing them onto the stack and
+;   pulling them to the accumulator after the result was checked. The "real"
+;   flags are no longer valid for the tested instruction at this time!
+;     If the tested instruction was indexed, the relevant index (X or Y) must
+;   also be checked. Opposed to the flags, X and Y registers are still valid.
+;
+; versions:
+;   28-jul-2012  1st version distributed for testing
+;   29-jul-2012  fixed references to location 0, now #0
+;                added license - GPLv3
+;   30-jul-2012  added configuration options
+;   01-aug-2012  added trap macro to allow user to change error handling
+;   01-dec-2012  fixed trap in branch field must be a branch
+;   02-mar-2013  fixed PLA flags not tested
+;   19-jul-2013  allowed ROM vectors to be loaded when load_data_direct = 0
+;                added test sequence check to detect if tests jump their fence
+;   23-jul-2013  added RAM integrity check option
+;   16-aug-2013  added error report to standard output option
+;   13-dec-2014  added binary/decimal opcode table switch test
+;   14-dec-2014  improved relative address test
+;   23-aug-2015  added option to disable self modifying tests
+;   24-aug-2015  all self modifying immediate opcodes now execute in data RAM
+;                added small branch offset pretest
+;   21-oct-2015  added option to disable decimal mode ADC & SBC tests
+;   04-dec-2017  fixed BRK only tested with interrupts enabled
+;                added option to skip the remainder of a failing test
+;                in report.i65
+;   05-jan-2020  fixed shifts not testing zero result and flag when last 1-bit
+;                is shifted out
+
+; C O N F I G U R A T I O N
+
+; sinple test to learn to use macro later
+
+;ROM_vectors writable (0=no, 1=yes)
+;if ROM vectors can not be used interrupts will not be trapped
+;as a consequence BRK can not be tested but will be emulated to test RTI
+ROM_vectors = 1
+
+;load_data_direct (0=move from code segment, 1=load directly)
+;loading directly is preferred but may not be supported by your platform
+;0 produces only consecutive object code, 1 is not suitable for a binary image
+load_data_direct = 1
+
+;I_flag behavior (0=force enabled, 1=force disabled, 2=prohibit change, 3=allow
+;change) 2 requires extra code and is not recommended. SEI & CLI can only be
+;tested if you allow changing the interrupt status (I_flag = 3)
+I_flag = 3
+
+;configure memory - try to stay away from memory used by the system
+;zero_page memory start address, $52 (82) consecutive Bytes required
+;                                add 2 if I_flag = 2
+zero_page = $a  
+
+;data_segment memory start address, $7B (123) consecutive Bytes required
+; check that this matches the linker configuration file
+data_segment = $200  
+    .if (data_segment & $ff) <> 0
+        .error "low byte of data_segment MUST be $00 !!"
+    .endif
+
+;code_segment memory start address, 13.1kB of consecutive space required
+;                                   add 2.5 kB if I_flag = 2
+; check that this matches the linker configuration file
+code_segment = $400  
+
+;self modifying code may be disabled to allow running in ROM
+;0=part of the code is self modifying and must reside in RAM
+;1=tests disabled: branch range
+disable_selfmod = 0
+
+;report errors through I/O channel (0=use standard self trap loops, 1=include
+;report.i65 as I/O channel, add 3.5 kB)
+report = 0
+
+;RAM integrity test option. Checks for undesired RAM writes.
+;set lowest non RAM or RAM mirror address page (-1=disable, 0=64k, $40=16k)
+;leave disabled if a monitor, OS or background interrupt is allowed to alter RAM
+ram_top = -1
+
+;disable test decimal mode ADC & SBC, 0=enable, 1=disable,
+;2=disable including decimal flag in processor status
+disable_decimal = 0
+
+;trap in case of unexpected IRQ, NMI, BRK, RESET - BRK test target
+nmi_trap:
+        ; trap            ;no longer check stack for conditions at NMI
+        jmp start       ;catastrophic error - cannot continue
+                        ; 0400 4c 15 04     ; JMP L0415
+res_trap:
+        ; trap            ;no longer unexpected RESET
+        jmp start       ; no longer catastrophic error - cannot continue
+                        ; 0403 4c 15 04     ; JMP L0415 
+        dey             ; 0406 88           ; DEY 
+        dey             ; 0406 88           ; DEY 
+irq_trap:               ;no longer BRK test or unextpected BRK or IRQ
+        php             ;no longer either SP or Y count will fail, if we do not hit
+                        ; 0408 08           ; PHP 
+        dey             ; 0409 88           ; DEY 
+        dey             ; 040A 88           ; DEY 
+        dey             ; 040B 88           ; DEY 
+        jmp start       ; need to finish it I guess ; kwc
+                        ; 040C 4C 15 04     ; JMP L0415
+
+vec_init:
+        .word   nmi_trap
+        .word   res_trap
+        .word   irq_trap
+
+start:  cld                 ; 0415: D8      ; CLD
+        ldx #$ff            ; 0146: A2 FF   ; #LDX #$FF 
+        txs                 ; 0418: 9A      ; TXS 
+        lda #1          ;no longer *** test 0 = initialize
+                            ; A9 00         ; LDA #$00
+        jmp start           ; forever loop
+
+    .if (load_data_direct = 1) & (ROM_vectors = 1)
+        .segment "VECTORS"
+        ; .org $fffa       ;vectors
+        .org $2ffa       ;vectors ; seems to be FF FF and change to $3ffa instead 
+        .word   nmi_trap ;3ffa 00 04 ; not strange as 2ffa is size
+        .word   res_trap ;3ffc 03 04 ; 
+        .word   irq_trap ;3ffe 08 04 ; 
+    .endif

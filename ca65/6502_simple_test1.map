@@ -1,16 +1,16 @@
 Modules list:
 -------------
-6502_decimal_test.o:
-    CODE              Offs=000000  Size=000104  Align=00001  Fill=0000
-    ZEROPAGE          Offs=000000  Size=000011  Align=00001  Fill=0000
+6502_simple_test1.o:
+    CODE              Offs=000000  Size=00001E  Align=00001  Fill=0000
+    VECTORS           Offs=000000  Size=000006  Align=00001  Fill=0000
 
 
 Segment list:
 -------------
 Name                   Start     End    Size  Align
 ----------------------------------------------------
-ZEROPAGE              000000  000010  000011  00001
-CODE                  000400  000503  000104  00001
+CODE                  000400  00041D  00001E  00001
+VECTORS               003FFA  003FFF  000006  00001
 
 
 Exports list by name:

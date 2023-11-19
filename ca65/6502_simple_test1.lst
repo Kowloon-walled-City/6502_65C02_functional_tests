@@ -1,0 +1,192 @@
+ca65 V2.18 - N/A
+Main file   : 6502_simple_test1.ca65
+Current file: 6502_simple_test1.ca65
+
+000000r 1               ;
+000000r 1               ; 6 5 0 2   F U N C T I O N A L   T E S T
+000000r 1               ;
+000000r 1               ; Copyright (C) 2012-2020  Klaus Dormann
+000000r 1               ;
+000000r 1               ; This program is free software: you can redistribute it and/or modify
+000000r 1               ; it under the terms of the GNU General Public License as published by
+000000r 1               ; the Free Software Foundation, either version 3 of the License, or
+000000r 1               ; (at your option) any later version.
+000000r 1               ;
+000000r 1               ; This program is distributed in the hope that it will be useful,
+000000r 1               ; but WITHOUT ANY WARRANTY; without even the implied warranty of
+000000r 1               ; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+000000r 1               ; GNU General Public License for more details.
+000000r 1               ;
+000000r 1               ; You should have received a copy of the GNU General Public License
+000000r 1               ; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+000000r 1               
+000000r 1               
+000000r 1               ; This program is designed to test all opcodes of a 6502 emulator using all
+000000r 1               ; addressing modes with focus on propper setting of the processor status
+000000r 1               ; register bits.
+000000r 1               ;
+000000r 1               ; version 05-jan-2020
+000000r 1               ; contact info at http://2m5.de or email K@2m5.de
+000000r 1               ;
+000000r 1               ; assembled with CA65, linked with LD65 (cc65.github.io):
+000000r 1               ;  ca65 -l 6502_functional_test.lst 6502_functional_test.ca65
+000000r 1               ;  ld65 6502_functional_test.o -o 6502_functional_test.bin \
+000000r 1               ;   -m 6502_functional_test.map -C example.cfg
+000000r 1               ; example linker config (example.cfg):
+000000r 1               ;  MEMORY {
+000000r 1               ;  RAM: start = $0000, size=$8000, type = rw, fill = yes, \
+000000r 1               ;   fillval = $FF, file = %O;
+000000r 1               ;  ROM: start = $8000, size=$7FFA, type = ro, fill = yes, \
+000000r 1               ;   fillval = $FF, file = %O;
+000000r 1               ;  ROM_VECTORS: start = $FFFA, size=6, type = ro, fill = yes, \
+000000r 1               ;   fillval = $FF, file = %O;
+000000r 1               ;  }
+000000r 1               ;  SEGMENTS {
+000000r 1               ;  ZEROPAGE: load=RAM, type=rw;
+000000r 1               ;  DATA: load=RAM, type=rw, offset=$0200;
+000000r 1               ;  CODE: load=RAM, type=rw, offset=$0400;
+000000r 1               ;  VECTORS: load=ROM_VECTORS, type=ro;
+000000r 1               ;  }
+000000r 1               ;
+000000r 1               ; No IO - should be run from a monitor with access to registers.
+000000r 1               ; To run load intel hex image with a load command, than alter PC to 400 hex
+000000r 1               ; (code_segment) and enter a go command.
+000000r 1               ; Loop on program counter determines error or successful completion of test.
+000000r 1               ; Check listing for relevant traps (jump/branch *).
+000000r 1               ; Please note that in early tests some instructions will have to be used before
+000000r 1               ; they are actually tested!
+000000r 1               ;
+000000r 1               ; RESET, NMI or IRQ should not occur and will be trapped if vectors are enabled.
+000000r 1               ; Tests documented behavior of the original NMOS 6502 only! No unofficial
+000000r 1               ; opcodes. Additional opcodes of newer versions of the CPU (65C02, 65816) will
+000000r 1               ; not be tested. Decimal ops will only be tested with valid BCD operands and
+000000r 1               ; N V Z flags will be ignored.
+000000r 1               ;
+000000r 1               ; Debugging hints:
+000000r 1               ;     Most of the code is written sequentially. if you hit a trap, check the
+000000r 1               ;   immediately preceeding code for the instruction to be tested. Results are
+000000r 1               ;   tested first, flags are checked second by pushing them onto the stack and
+000000r 1               ;   pulling them to the accumulator after the result was checked. The "real"
+000000r 1               ;   flags are no longer valid for the tested instruction at this time!
+000000r 1               ;     If the tested instruction was indexed, the relevant index (X or Y) must
+000000r 1               ;   also be checked. Opposed to the flags, X and Y registers are still valid.
+000000r 1               ;
+000000r 1               ; versions:
+000000r 1               ;   28-jul-2012  1st version distributed for testing
+000000r 1               ;   29-jul-2012  fixed references to location 0, now #0
+000000r 1               ;                added license - GPLv3
+000000r 1               ;   30-jul-2012  added configuration options
+000000r 1               ;   01-aug-2012  added trap macro to allow user to change error handling
+000000r 1               ;   01-dec-2012  fixed trap in branch field must be a branch
+000000r 1               ;   02-mar-2013  fixed PLA flags not tested
+000000r 1               ;   19-jul-2013  allowed ROM vectors to be loaded when load_data_direct = 0
+000000r 1               ;                added test sequence check to detect if tests jump their fence
+000000r 1               ;   23-jul-2013  added RAM integrity check option
+000000r 1               ;   16-aug-2013  added error report to standard output option
+000000r 1               ;   13-dec-2014  added binary/decimal opcode table switch test
+000000r 1               ;   14-dec-2014  improved relative address test
+000000r 1               ;   23-aug-2015  added option to disable self modifying tests
+000000r 1               ;   24-aug-2015  all self modifying immediate opcodes now execute in data RAM
+000000r 1               ;                added small branch offset pretest
+000000r 1               ;   21-oct-2015  added option to disable decimal mode ADC & SBC tests
+000000r 1               ;   04-dec-2017  fixed BRK only tested with interrupts enabled
+000000r 1               ;                added option to skip the remainder of a failing test
+000000r 1               ;                in report.i65
+000000r 1               ;   05-jan-2020  fixed shifts not testing zero result and flag when last 1-bit
+000000r 1               ;                is shifted out
+000000r 1               
+000000r 1               ; C O N F I G U R A T I O N
+000000r 1               
+000000r 1               ; sinple test to learn to use macro later
+000000r 1               
+000000r 1               ;ROM_vectors writable (0=no, 1=yes)
+000000r 1               ;if ROM vectors can not be used interrupts will not be trapped
+000000r 1               ;as a consequence BRK can not be tested but will be emulated to test RTI
+000000r 1               ROM_vectors = 1
+000000r 1               
+000000r 1               ;load_data_direct (0=move from code segment, 1=load directly)
+000000r 1               ;loading directly is preferred but may not be supported by your platform
+000000r 1               ;0 produces only consecutive object code, 1 is not suitable for a binary image
+000000r 1               load_data_direct = 1
+000000r 1               
+000000r 1               ;I_flag behavior (0=force enabled, 1=force disabled, 2=prohibit change, 3=allow
+000000r 1               ;change) 2 requires extra code and is not recommended. SEI & CLI can only be
+000000r 1               ;tested if you allow changing the interrupt status (I_flag = 3)
+000000r 1               I_flag = 3
+000000r 1               
+000000r 1               ;configure memory - try to stay away from memory used by the system
+000000r 1               ;zero_page memory start address, $52 (82) consecutive Bytes required
+000000r 1               ;                                add 2 if I_flag = 2
+000000r 1               zero_page = $a
+000000r 1               
+000000r 1               ;data_segment memory start address, $7B (123) consecutive Bytes required
+000000r 1               ; check that this matches the linker configuration file
+000000r 1               data_segment = $200
+000000r 1                   .if (data_segment & $ff) <> 0
+000000r 1                       .error "low byte of data_segment MUST be $00 !!"
+000000r 1                   .endif
+000000r 1               
+000000r 1               ;code_segment memory start address, 13.1kB of consecutive space required
+000000r 1               ;                                   add 2.5 kB if I_flag = 2
+000000r 1               ; check that this matches the linker configuration file
+000000r 1               code_segment = $400
+000000r 1               
+000000r 1               ;self modifying code may be disabled to allow running in ROM
+000000r 1               ;0=part of the code is self modifying and must reside in RAM
+000000r 1               ;1=tests disabled: branch range
+000000r 1               disable_selfmod = 0
+000000r 1               
+000000r 1               ;report errors through I/O channel (0=use standard self trap loops, 1=include
+000000r 1               ;report.i65 as I/O channel, add 3.5 kB)
+000000r 1               report = 0
+000000r 1               
+000000r 1               ;RAM integrity test option. Checks for undesired RAM writes.
+000000r 1               ;set lowest non RAM or RAM mirror address page (-1=disable, 0=64k, $40=16k)
+000000r 1               ;leave disabled if a monitor, OS or background interrupt is allowed to alter RAM
+000000r 1               ram_top = -1
+000000r 1               
+000000r 1               ;disable test decimal mode ADC & SBC, 0=enable, 1=disable,
+000000r 1               ;2=disable including decimal flag in processor status
+000000r 1               disable_decimal = 0
+000000r 1               
+000000r 1               ;trap in case of unexpected IRQ, NMI, BRK, RESET - BRK test target
+000000r 1               nmi_trap:
+000000r 1                       ; trap            ;no longer check stack for conditions at NMI
+000000r 1  4C rr rr             jmp start       ;catastrophic error - cannot continue
+000003r 1                                       ; 0400 4c 15 04     ; JMP L0415
+000003r 1               res_trap:
+000003r 1                       ; trap            ;no longer unexpected RESET
+000003r 1  4C rr rr             jmp start       ; no longer catastrophic error - cannot continue
+000006r 1                                       ; 0403 4c 15 04     ; JMP L0415
+000006r 1  88                   dey             ; 0406 88           ; DEY
+000007r 1  88                   dey             ; 0406 88           ; DEY
+000008r 1               irq_trap:               ;no longer BRK test or unextpected BRK or IRQ
+000008r 1  08                   php             ;no longer either SP or Y count will fail, if we do not hit
+000009r 1                                       ; 0408 08           ; PHP
+000009r 1  88                   dey             ; 0409 88           ; DEY
+00000Ar 1  88                   dey             ; 040A 88           ; DEY
+00000Br 1  88                   dey             ; 040B 88           ; DEY
+00000Cr 1  4C rr rr             jmp start       ; need to finish it I guess ; kwc
+00000Fr 1                                       ; 040C 4C 15 04     ; JMP L0415
+00000Fr 1               
+00000Fr 1               vec_init:
+00000Fr 1  rr rr                .word   nmi_trap
+000011r 1  rr rr                .word   res_trap
+000013r 1  rr rr                .word   irq_trap
+000015r 1               
+000015r 1  D8           start:  cld                 ; 0415: D8      ; CLD
+000016r 1  A2 FF                ldx #$ff            ; 0146: A2 FF   ; #LDX #$FF
+000018r 1  9A                   txs                 ; 0418: 9A      ; TXS
+000019r 1  A9 01                lda #1          ;no longer *** test 0 = initialize
+00001Br 1                                           ; A9 00         ; LDA #$00
+00001Br 1  4C rr rr             jmp start           ; forever loop
+00001Er 1               
+00001Er 1                   .if (load_data_direct = 1) & (ROM_vectors = 1)
+00001Er 1                       .segment "VECTORS"
+000000r 1                       ; .org $fffa       ;vectors
+000000r 1                       .org $2ffa       ;vectors ; seems to be FF FF and change to $3ffa instead
+002FFA  1  rr rr                .word   nmi_trap ;3ffa 00 04 ; strange not 2ffa
+002FFC  1  rr rr                .word   res_trap ;3ffc 03 04 ; ???
+002FFE  1  rr rr                .word   irq_trap ;3ffe 08 04 ;
+003000  1                   .endif
+003000  1               
