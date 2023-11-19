@@ -23,7 +23,7 @@
 ;
 ; version 02-mar-2013 (fetched from http://2m5.de/6502_Emu/6502_functional_tests.zip)
 ; contact info at http://2m5.de or email K@2m5.de
-;   
+;
 ; assembled with AS65 from http://www.kingswood-consulting.co.uk/assemblers/
 ; command line switches: -l -m -s2 -w -h0
 ;                         |  |  |   |  no page headers in listing

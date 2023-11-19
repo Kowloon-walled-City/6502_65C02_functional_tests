@@ -22,7 +22,7 @@
 ;
 ; This program takes approximately 1 minute at 1 MHz (a few seconds more on
 ; a 65C02 than a 6502 or 65816)
-;
+; 
 
 ; Configuration:
 cputype = 0         ; 0 = 6502, 1 = 65C02, 2 = 65C816
